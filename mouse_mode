@@ -1,0 +1,536 @@
+//Configs:
+float width = 1200;
+float height = 800;
+float numCellsW=30;
+float numCellsH=20;
+Boolean displayBoard=false;
+int peopleUIMode=1; // 1: mouse, 2:camera
+int radius=20;
+
+//init:
+People people = new People();
+Board board = new Board(width, height, numCellsW, numCellsH);
+PSystem psystem = new PSystem();
+
+void setup(){
+  size(floor(width), floor(height));
+  frameRate(30);
+  background(0);
+  board.isVisible=displayBoard;
+  people.uiMode=peopleUIMode;
+  people.radius=radius;
+}
+
+void draw(){
+  clear();
+  people.update();
+  board.update(people.getPersonList(), people.numPerson, psystem);
+  psystem.update();
+  
+  people.draw();
+  psystem.draw();
+}
+
+//events:
+void mousePressed() {
+  people.mousePressed();
+  //print("preessed");
+}
+void mouseReleased() {
+ //print("released");
+ people.mouseReleased();
+}
+void mouseMoved() {
+//print("mouse:"+mouseX);
+}
+
+class Attractor{
+  float x=150;
+  float y=150;
+  float force=1;
+  float forceFactor=1;
+  float radius=200; 
+  float duration=1;
+  Cell cell=null;
+  int isToExplode=0;
+  int timeout=0;
+  
+  Attractor(Cell _cell, float _x, float _y){
+      cell=_cell;
+      x=_x*cell.w;
+      y=_y*cell.h;
+  }
+  
+  float getRadius(){
+     return min(600, radius * forceFactor * duration * 0.001);
+  }
+  
+  void explode(){
+      if(isToExplode==0){
+         isToExplode=1;
+      }
+  }
+  
+  void exploded(){
+      if(timeout==20){
+        if(isToExplode==1){
+           isToExplode=2; 
+        }
+        timeout=0;
+      }
+      timeout++;
+    }
+}
+
+class Board{
+  float width, height, wCells, hCells, numCellsH, numCellsW;
+  Boolean isVisible=false;
+  Cell[][] cells; //Cell[][] cells;
+  
+  color alive = color(119,111,111);
+  color dead = color(0);
+    
+  Board(float w, float h, float _numCellsW, float _numCellsH){
+    width=w;
+    height=h;
+    numCellsW=_numCellsW;
+    numCellsH=_numCellsH;
+    wCells=floor(w/numCellsW);
+    hCells=floor(h/numCellsH);
+
+    numCellsW=_numCellsW;
+    numCellsH=_numCellsH;
+
+    cells = new Cell[floor(numCellsW)][floor(numCellsH)];
+  } 
+  
+  void update(Person[] peopleList, int numPerson, PSystem pSystem){
+    
+    //Deactivate all cells:
+    for (int i=0; i < numCellsW; i++){
+       for(int j=0; j< numCellsH; j++){
+         if(cells[i][j]==null){
+            cells[i][j]=new Cell(); 
+         }
+         cells[i][j].x=i;
+         cells[i][j].y=j;
+         cells[i][j].w=wCells;
+         cells[i][j].h=hCells;
+         cells[i][j].state=0; //desactivar as celulas!
+    //print("people:"+numPerson);
+       }
+    }
+      
+      //Map Person to Cell
+      for(int i=0; i<numPerson; i++){
+         Person p=peopleList[i]; //p.x, p.y
+         //print(p.x+" "+ p.y+" ->"+height+"   "+numCellsH);
+      
+      int xOccupiedCell = floor( p.x / width * numCellsW); 
+      int yOccupiedCell = floor( p.y / height * numCellsH);
+      //print("\nxOccupiedCell:"+xOccupiedCell+" yOccupiedCell:"+yOccupiedCell);
+      
+        cells[xOccupiedCell][yOccupiedCell].state=1;  
+      }
+      
+      mapBehaviours(pSystem);
+      draw();
+  }
+  void mapBehaviours(PSystem psystem){
+    //detect surrounding cells:
+    for (int i=1; i < numCellsW-1; i++){
+       for(int j=1; j< numCellsH-1; j++){
+           Cell cell=cells[i][j];
+           if(cell.state==0){
+             if(cell.isIn==1){
+                 //deactivate cell:
+                psystem.removeParticles(cell.numParticles);
+                cell.numParticles=0;
+                if(cell.attractor!=null){
+                    psystem.removeAttractor(cell); 
+                 }
+                cell.isIn=0;
+             } 
+           }else{
+             int numActiveCells=0;
+             
+             if(cells[i-1][j-1].state==1) numActiveCells++;
+             if(cells[i][j-1].state==1) numActiveCells++;
+             if(cells[i+1][j-1].state==1) numActiveCells++;
+             
+             if(cells[i-1][j].state==1) numActiveCells++;
+             if(cells[i+1][j].state==1) numActiveCells++;
+             
+             if(cells[i-1][j+1].state==1) numActiveCells++;
+             if(cells[i][j+1].state==1) numActiveCells++;
+             if(cells[i+1][j+1].state==1) numActiveCells++;
+             
+             cell.numActiveCells=numActiveCells;
+             //print("\nnunNeighbours:"+numActiveCells);
+             if(cell.isIn==0){
+                cell.isIn=1;
+                cell.numParticles+=30;
+                psystem.addParticles(30, i, j, cell);
+             }
+             if(numActiveCells==0){
+                 if(cell.attractor!=null){
+                    psystem.removeAttractor(cell); 
+                 }
+             }else{
+                if(cell.attractor==null){
+                   psystem.addAttractor(cell, i, j);
+                 } 
+                 cell.attractor.forceFactor=numActiveCells;
+             }
+             if(numActiveCells>3){
+                cell.attractor.explode(); 
+             }
+           }
+       }
+    }
+  }
+ 
+  void draw(){
+   //print("DRAW BOARD?");
+    //print("\n???"+wCells+"  "+hCells);
+    for (int i=0; i < numCellsW; i++){
+       for(int j=0; j< numCellsH; j++){
+         
+         if (cells[i][j].state==1) {
+             stroke(50);
+             fill(alive);
+             rect (float(i)*wCells, float(j)*hCells, wCells, hCells); //corrigir!!
+           noStroke();
+           noFill();
+           //print("darw rect"+float(i)*wCells+"  "+float(j)*hCells+"  "+wCells+" "+ hCells);
+           //print("\n"+i+"::"+j+"   "+(i*wCells)+", "+j*wCells+", "+ wCells+", "+hCells);
+           if(cells[i][j].attractor!=null){
+             noFill();
+             stroke(255);
+             ellipse(float(i)*wCells, float(j)*hCells, cells[i][j].attractor.getRadius(), cells[i][j].attractor.getRadius());
+             noStroke();
+           }
+         }
+       }
+    }
+  }
+  
+  //events:
+  void mousePressed() {
+    //print("ok");
+  }
+}
+
+class Cell{
+  int x=0;
+  int y=0;
+  int state=0;
+  int numParticles=0;
+  int isIn=0;
+  int numActiveCells=0;
+  Attractor attractor=null;
+  float w, h;
+  
+  int behaviour=0; 
+  int isOn=0;
+  
+  Cell(){
+  }
+}
+
+class PSystem{
+  Particle[] particleList=new Particle[5000];
+  ArrayList<Attractor> attractors=new ArrayList<Attractor>();
+  int numParticles=0;
+  boolean particleAlive = false;
+ 
+  PSystem(){   
+     for(int i=0; i<100; i++){
+    }   
+  }
+  
+  void addParticles(int num, float x, float y, Cell cell){
+      for(int i=0; i<num; i++){
+       print("cell="+cell.w+"----"+cell.h);
+       add(new Particle((x*floor(cell.w))+random(50)-25, (y*floor(cell.h))+random(50)-25, random(10), random(10), 5));
+    } 
+  }
+
+  void removeParticles(int num){
+      for(int i=0; i<num; i++){
+       remove();
+    } 
+  }
+  
+  Attractor addAttractor(Cell cell, float x, float y){
+    Attractor attractor=new Attractor(cell, x, y);
+    cell.attractor=attractor;
+    attractors.add(attractor);
+    return attractor;
+  }
+
+  void removeAttractor(Cell cell){
+    Attractor attractor=cell.attractor;
+    attractors.remove(attractor);
+    cell.attractor=null;
+  }
+  
+  void add(Particle p){
+    //print("numParticels:"+numParticles); 
+    particleList[numParticles]=p;
+     numParticles++; //cria uma Particle
+  }
+  
+  void remove(){
+     particleList[numParticles]=null;
+     numParticles--; //destroi uma Particle
+  }
+ 
+  void display() {
+    //stroke(0);
+    //fill(255, 0, 222);
+    //ellipse(x,y,radius,radius);
+  }
+
+  void update(){
+     for (int i = 0; i < numParticles; i++) {
+      Particle p = (Particle) particleList[i];
+      //functions of the particle's movement:
+      p.ax=0;
+      p.ay=0;
+      //p.gravity();
+      p.brown();
+     }
+     
+     for (int i = 0; i < numParticles; i++) {
+      Particle p = (Particle) particleList[i];
+      for(int j=0; j<attractors.size(); j++){
+
+         Attractor attractor=attractors.get(j);
+         //print("\n\n?????"+attractor.x+"    ----   "+attractor.y);
+         p.attract(attractor);
+      }  
+     }
+     
+     for(int j=0; j<attractors.size(); j++){
+       Attractor attractor=attractors.get(j);
+       attractor.duration++;
+       attractor.exploded();
+     }
+     
+     for (int i = 0; i < numParticles; i++) {
+       Particle p = (Particle) particleList[i];
+      p.run();
+    }
+  }
+  
+  void draw() {
+    fill(0, 40);
+    rect(0, 0, width, height);
+    for (int i = 0; i < numParticles; i++) {
+      Particle p = (Particle) particleList[i];
+      p.draw();
+    }
+ }
+}
+
+class Particle{
+  float x;
+  float y;
+  float vx;
+  float vy;
+  float ax=0;
+  float ay=0;
+  float speed=2;
+  float angle=random(360);
+  float radius = 2;
+  int num = 100;
+  int range = 20;
+  float[] px = new float [num];
+  float[] py = new float [num];
+  
+   Particle(float _x, float _y, float _xspeed, float _yspeed, float _radius){
+      x=_x;
+      y=_y;
+      vx= _xspeed;
+      vy= _yspeed;
+      radius=_radius;
+   }
+
+  void draw(){
+    fill(255);
+    ellipse(x, y, radius, radius);
+  }  
+
+  void update(){
+  }
+  
+   void run() {
+    vx+=ax;
+    vy+=ay;
+    x = x + vx;
+    y = y + vy;
+    vx*=0.05;
+    vy*=0.05;
+    
+    // restrict particles to the screen / toroidal movement
+    if(x> width) x-=width;
+    if(y> height) y-=height;
+    if(x<0) x=width;
+    if(y<0) y=height;
+  }
+  
+  void brown(){
+    angle+=(random(0.4)-0.2); 
+    
+     vx+=speed*sin(angle);
+     vy+=speed*cos(angle);   
+  }
+
+  void attract(Attractor attractor){
+    //print("\n\nXY:::#"+attractor.x+"    "+attractor.y);
+    float vecx=(attractor.x-x);
+    float vecy=(attractor.y-y);
+    float d=sqrt((vecx*vecx)+(vecy*vecy))*1.0;
+    
+    if(attractor.isToExplode==1){
+      if( d < 200){
+          vx*=10;
+          vy*=10;
+          ax+=20;
+          ay+=20;
+        
+          print("BANG!");
+        }
+      }
+    
+    if(str(d)=="NaN" || d==0){
+       d=0.00001; 
+    }
+
+    float k=0.006;
+    //print("so:"+attractor.x+"  "+attractor.y);
+    if( d < attractor.getRadius()){
+      float force=k*((d-attractor.radius)/d);
+       ax-=force*vecx;
+       ay-=force*vecy;
+      //print("\nFORCE:"+force+"      vecx:"+vecx+"   vecy:"+vecy+"    force:"+attractor.force);
+       //print("\nX Y POSITION:"+ax+"   "+ay);
+    }
+  }
+}
+
+class People{
+  Person[] personList=new Person[40]; 
+  int numPerson=0;
+  //mouse mode
+  int uiMode=1; //1:mouse, 2:camera
+  int radius=40;
+  
+  Person selectedPerson;
+  int currMX=-1;
+  int currMY=-1;
+  
+  People( ){ 
+  } 
+  
+  void update(){
+    if(selectedPerson!=null){ 
+       selectedPerson.x=mouseX;
+       selectedPerson.y=mouseY;
+    }
+
+   //loop
+   for(int i=0; i<numPerson; i++){
+      Person p=personList[i];
+      p.update();
+    }
+  }
+  void draw(){
+    for(int i=0; i<numPerson; i++){
+      
+      Person p=personList[i];
+      p.draw();
+   }
+  }
+  
+  Person[] getPersonList(){
+    return personList; 
+  }
+  
+  void destroyPerson(Person person){
+      for(int i=0; i<numPerson; i++){
+         if(personList[i]==person){
+           for(int j=i; j<numPerson-1; j++){
+              personList[j]=personList[j+1];
+           }
+
+           numPerson--;
+           break;
+         } 
+       }
+  }
+  
+  void mousePressed() {
+     if(uiMode==1){
+       //seek if a Person was pressed:
+       Boolean foundPerson=false;
+       selectedPerson=null;
+       currMX=mouseX;
+       currMY=mouseY;
+       for(int i=0; i<numPerson; i++){
+         Person person=personList[i];
+         //print("person xy:"+person.x+" "+person.y);
+         
+         if(abs(mouseX-person.x)<radius && abs(mouseY-person.y)<radius){
+            //print("\n found person!");
+            foundPerson=true;
+            selectedPerson=person;
+            
+            break;
+         } 
+       }
+     }
+    }
+  
+  void mouseReleased() {
+     if(uiMode==1){
+         if(selectedPerson!=null){
+           if(mouseX==currMX && mouseY==currMY){
+              destroyPerson(selectedPerson);
+              //print("destroy person");
+           }
+       }else{
+           if(mouseX==currMX && mouseY==currMY){
+               personList[numPerson]=new Person(mouseX, mouseY, radius);
+               numPerson++; //cria uma Person
+               //print("create person: "+numPerson+" existent");
+           }  
+       }
+
+        selectedPerson=null;
+     }
+  }
+}
+
+class Person{
+  float x=0;
+  float y=0;
+  float vx=0;
+  float vy=0; 
+  float radius=5; 
+  
+  Person(int _x, int _y, int _radius){
+    x=_x;
+    y=_y;
+    radius=_radius;
+  } 
+
+  void draw(){
+    ellipse(x, y, radius, radius);
+     fill(255);
+  }
+  
+  void update(){
+  }
+}
