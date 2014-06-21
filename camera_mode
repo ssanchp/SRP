@@ -1,0 +1,706 @@
+import processing.video.*; 
+Capture video; 
+// Previous Frame
+PImage prevFrame;
+// How different must a pixel be to be a "motion" pixel
+float threshold = 50;
+
+//Configs:
+float width = 800;
+float height = 600;
+float numCellsW=16;
+float numCellsH=12;
+Boolean displayBoard=false;
+int peopleUIMode=2; // 1: mouse, 2:camera
+int radius=20;
+int numPixels;
+int[][] cameraData;
+Boolean firstLoad=true;
+
+//init:
+People people = new People(peopleUIMode);
+Board board = new Board(width, height, numCellsW, numCellsH);
+
+PSystem psystem = new PSystem();
+
+void setup(){
+  size(floor(width), floor(height), P2D);
+  
+  String[] cameras = Capture.list();
+  
+  if (cameras.length == 0) {
+    println("There are no cameras available for capture.");
+    exit();
+  } else {
+    println("Available cameras:");
+    for (int i = 0; i < cameras.length; i++) {
+      println(cameras[i]);
+    }
+  }
+    
+  //frameRate(30);
+  //background(0);
+  numPixels=parseInt(numCellsW*numCellsH);
+  cameraData=new int[parseInt(numCellsW)][parseInt(numCellsH)];
+  board.isVisible=displayBoard;
+  people.uiMode=peopleUIMode;
+  people.radius=radius;
+  
+  if(peopleUIMode==2){
+   video = new Capture(this, parseInt(numCellsW), parseInt(numCellsH)); //, "Microsoft LifeCam VX-5000")
+   video.start(); 
+  
+   prevFrame = createImage(video.width,video.height,RGB); 
+  }
+}
+
+void draw(){
+  clear();
+  image(video, 10, 10, 640, 480);
+  if(peopleUIMode==2){
+      if (video.available()) { 
+        // Reads the new frame
+        if(keyPressed){
+          if(key=='u'){
+            prevFrame.copy(video,0,0,video.width,video.height,0,0,video.width,video.height); // Before we read the new frame, we always save the previous frame for comparison!
+            prevFrame.updatePixels();
+          }
+          
+          if(key=='+' && threshold<100){
+             threshold++;
+              print("threshold: "+threshold); 
+          }
+          
+          if(key=='-' && threshold>0){
+             threshold--;
+              print("threshold: "+threshold); 
+          }
+        }
+        
+        if(firstLoad){
+          firstLoad=false;
+           prevFrame.copy(video,0,0,video.width,video.height,0,0,video.width,video.height); // Before we read the new frame, we always save the previous frame for comparison!
+        }
+        
+        prevFrame.updatePixels();
+    
+        video.read(); 
+      }else{
+        loadPixels();
+      }  
+      
+   //image(video, 0, 0); 
+   //loadPixels();
+    video.loadPixels();
+    prevFrame.loadPixels();
+  
+  // Begin loop to walk through every pixel
+  for (int x = 0; x < video.width; x ++ ) {
+    for (int y = 0; y < video.height; y ++ ) {
+      
+      int loc = x + y*video.width;            // Step 1, what is the 1D pixel location
+      color current = video.pixels[loc];      // Step 2, what is the current color
+      color previous = prevFrame.pixels[loc]; // Step 3, what is the previous color
+      
+      // Step 4, compare colors (previous vs. current)
+      float r1 = red(current); float g1 = green(current); float b1 = blue(current);
+      float r2 = red(previous); float g2 = green(previous); float b2 = blue(previous);
+      float diff = dist(r1,g1,b1,r2,g2,b2);
+      
+      // Step 5, How different are the colors?
+      // If the color at that pixel has changed, then there is motion at that pixel.
+      if (diff > threshold) { 
+        // If motion, display black
+        pixels[loc] = color(0);
+        cameraData[x][y]=1;
+      } else {
+        // If not, display white
+        pixels[loc] = color(255);
+         cameraData[x][y]=0;
+      }
+    }
+  }
+  
+  //updatePixels();
+  updatePixels();
+  }
+
+  if(peopleUIMode==1){
+  //people.setCameraData(cameraData);
+  people.update();
+  board.update(people.getPersonList(), people.numPerson, psystem);
+  psystem.update();
+  
+  people.draw();
+  psystem.draw();
+  }else{
+     //people.setCameraData(cameraData);
+    //people.update();
+    
+    board.update2(cameraData, psystem);
+  psystem.update();
+  
+  //people.draw();
+  psystem.draw();
+    //image(video, 10, 10, 320, 240);
+  }
+}
+
+//events:
+void mousePressed() {
+  people.mousePressed();
+  //print("preessed");
+}
+void mouseReleased() {
+ //print("released");
+ people.mouseReleased();
+}
+void mouseMoved() {
+//print("mouse:"+mouseX);
+}
+
+class Attractor{
+  float x=150;
+  float y=150;
+  float force=1;
+  float forceFactor=1;
+  float radius=200; 
+  float duration=1;
+  Cell cell=null;
+  int isToExplode=0;
+  int timeout=0;
+  
+  Attractor(Cell _cell, float _x, float _y){
+      cell=_cell;
+      x=_x*cell.w;
+      y=_y*cell.h;
+  }
+  
+  float getRadius(){
+     return min(600, radius * forceFactor * duration * 0.001);
+  }
+  
+  void explode(){
+      if(isToExplode==0){
+         isToExplode=1;
+      }
+  }
+  
+  void exploded(){
+      if(timeout==20){
+        if(isToExplode==1){
+           isToExplode=2; 
+        }
+        timeout=0;
+      }
+      timeout++;
+    }
+}
+
+class Board{
+  float width, height, wCells, hCells, numCellsH, numCellsW;
+  Boolean isVisible=false;
+  Cell[][] cells; //Cell[][] cells;
+  
+  color alive = color(0);
+  color dead = color(0);
+    
+  Board(float w, float h, float _numCellsW, float _numCellsH){
+    width=w;
+    height=h;
+    numCellsW=_numCellsW;
+    numCellsH=_numCellsH;
+    wCells=floor(w/numCellsW);
+    hCells=floor(h/numCellsH);
+
+    numCellsW=_numCellsW;
+    numCellsH=_numCellsH;
+
+    cells = new Cell[floor(numCellsW)][floor(numCellsH)];
+  } 
+  
+  void update(Person[] peopleList, int numPerson, PSystem pSystem){
+    
+    //DESACTIVAR TODAS AS CELULAS:
+    for (int i=0; i < numCellsW; i++){
+       for(int j=0; j< numCellsH; j++){
+         if(cells[i][j]==null){
+            cells[i][j]=new Cell(); 
+         }
+         cells[i][j].x=i;
+         cells[i][j].y=j;
+         cells[i][j].w=wCells;
+         cells[i][j].h=hCells;
+         cells[i][j].state=0;
+    //print("people:"+numPerson);
+       }
+    }
+      
+      //MAPEAR Person a Cell
+      for(int i=0; i<numPerson; i++){
+         Person p=peopleList[i]; //p.x, p.y
+         //print(p.x+" "+ p.y+" ->"+height+"   "+numCellsH);
+      
+      int xOccupiedCell = floor( p.x / width * numCellsW); 
+      int yOccupiedCell = floor( p.y / height * numCellsH);
+      //print("\nxOccupiedCell:"+xOccupiedCell+" yOccupiedCell:"+yOccupiedCell);
+      
+        cells[xOccupiedCell][yOccupiedCell].state=1;  
+      }
+      
+      mapBehaviours(pSystem);
+      draw();
+  }
+  
+   void update2(int[][] cameraData, PSystem pSystem){
+    
+    //Deactivate all cells:
+    for (int i=0; i < numCellsW; i++){
+       for(int j=0; j< numCellsH; j++){
+         Cell cell=cells[i][j];
+         if(cell==null){
+            cell=new Cell(); 
+            cells[i][j]=cell;
+         }
+         cell.x=i;
+         cell.y=j;
+         cell.w=wCells;
+         cell.h=hCells;
+         cell.setState(cameraData[i][j]);
+         //cells[i][j].state= //deactivate cells
+    //print("people:"+numPerson);
+       }
+    }
+      
+      mapBehaviours(pSystem);
+      draw();
+      
+  }
+  void mapBehaviours(PSystem psystem){
+    //detect surrounding cells:
+    for (int i=1; i < numCellsW-1; i++){
+       for(int j=1; j< numCellsH-1; j++){
+           Cell cell=cells[i][j];
+           if(cell.state==0){
+             if(cell.isIn==1){
+                 //deactivate cell:
+                psystem.removeParticles(cell.numParticles);
+                cell.numParticles=0;
+                if(cell.attractor!=null){
+                    psystem.removeAttractor(cell); 
+                 }
+                 
+                cell.isIn=0;
+             } 
+             
+           }else{
+             int numActiveCells=0;
+             
+             if(cells[i-1][j-1].state==1) numActiveCells++;
+             if(cells[i][j-1].state==1) numActiveCells++;
+             if(cells[i+1][j-1].state==1) numActiveCells++;
+             
+             if(cells[i-1][j].state==1) numActiveCells++;
+             if(cells[i+1][j].state==1) numActiveCells++;
+             
+             if(cells[i-1][j+1].state==1) numActiveCells++;
+             if(cells[i][j+1].state==1) numActiveCells++;
+             if(cells[i+1][j+1].state==1) numActiveCells++;
+             
+             cell.numActiveCells=numActiveCells;
+             //print("\nnunNeighbours:"+numActiveCells);
+             if(cell.isIn==0){
+                cell.isIn=1;
+                cell.numParticles+=30;
+                psystem.addParticles(30, i, j, cell);
+             }
+             
+             if(numActiveCells==0){
+                 if(cell.attractor!=null){
+                    psystem.removeAttractor(cell); 
+                 }
+             }else{
+                if(cell.attractor==null){
+                   psystem.addAttractor(cell, i, j);
+                 } 
+                 
+                 cell.attractor.forceFactor=numActiveCells;
+             }
+             
+             if(numActiveCells>3){
+                cell.attractor.explode(); 
+             }
+           }
+       }
+    }
+  }
+
+  void draw(){
+   //print("DRAW BOARD?");
+   
+    //print("\n???"+wCells+"  "+hCells);
+    for (int i=0; i < numCellsW; i++){
+       for(int j=0; j< numCellsH; j++){
+         
+         if (cells[i][j].state==1) {
+             stroke(50);
+             fill(alive);
+             rect (float(i)*wCells, float(j)*hCells, wCells, hCells);
+           noStroke();
+           noFill();
+           //print("darw rect"+float(i)*wCells+"  "+float(j)*hCells+"  "+wCells+" "+ hCells);
+           //print("\n"+i+"::"+j+"   "+(i*wCells)+", "+j*wCells+", "+ wCells+", "+hCells);
+           if(cells[i][j].attractor!=null){
+             noFill();
+             stroke(255);
+             ellipse(float(i)*wCells, float(j)*hCells, cells[i][j].attractor.getRadius(), cells[i][j].attractor.getRadius());
+             noStroke();
+           }
+         }
+       }
+    }
+  }
+  
+  //events:
+  void mousePressed() {
+    //print("ok");
+  }
+}
+
+class Cell{
+  int x=0;
+  int y=0;
+  int state=0;
+  int numParticles=0;
+  int isIn=0;
+  int numActiveCells=0;
+  Attractor attractor=null;
+  float w, h;
+  int timeOut=0;
+  
+  int behaviour=0; 
+  int isOn=0;
+  
+  Cell(){
+    
+  }
+  void setState(int val){
+    if(val==0){
+      timeOut++;
+      if(timeOut>1){
+        timeOut=0;
+        state=0;
+        //print("set 0");
+      }
+    }else{
+      timeOut=0;
+      state=val; 
+      //print("set 1");
+    }
+  }
+}
+
+class PSystem{
+  int maxParticles=50000;
+  Particle[] particleList=new Particle[maxParticles];
+  ArrayList<Attractor> attractors=new ArrayList<Attractor>();
+  int numParticles=0;
+  boolean particleAlive = false;
+ 
+  PSystem(){
+   
+     for(int i=0; i<100; i++){
+    } 
+  }
+  
+  void addParticles(int num, float x, float y, Cell cell){
+      for(int i=0; i<num; i++){
+       //print("cell="+cell.w+"----"+cell.h);
+       add(new Particle((x*floor(cell.w))+random(50)-25, (y*floor(cell.h))+random(50)-25, random(10), random(10), 5));
+    } 
+  }
+  
+  void removeParticles(int num){
+      for(int i=0; i<num; i++){
+      remove();
+    } 
+  }
+  
+  Attractor addAttractor(Cell cell, float x, float y){
+    Attractor attractor=new Attractor(cell, x, y);
+    cell.attractor=attractor;
+    attractors.add(attractor);
+    return attractor;
+  }
+  void removeAttractor(Cell cell){
+    Attractor attractor=cell.attractor;
+    attractors.remove(attractor);
+    cell.attractor=null;
+  }
+  
+  void add(Particle p){
+    if(numParticles>maxParticles) return;
+    //print("numParticels:"+numParticles); 
+    particleList[numParticles]=p;
+    numParticles++; //creates a Particle
+  }
+  
+  void remove(){
+     particleList[numParticles]=null;
+     numParticles--; //destroys a Particle
+  }
+ 
+  void display() {
+    //stroke(0);
+    //fill(255, 0, 222);
+    //ellipse(x,y,radius,radius);
+  }
+  void update(){
+     for (int i = 0; i < numParticles; i++) {
+      Particle p = (Particle) particleList[i];
+      //functions of the particle's movement:
+      p.ax=0;
+      p.ay=0;
+      //p.gravity();
+      p.brown();
+     }
+     
+     for (int i = 0; i < numParticles; i++) {
+      Particle p = (Particle) particleList[i];
+      for(int j=0; j<attractors.size(); j++){
+
+         Attractor attractor=attractors.get(j);
+         //print("\n\n?????"+attractor.x+"    ----   "+attractor.y);
+         p.attract(attractor);
+      }  
+     }
+     
+     for(int j=0; j<attractors.size(); j++){
+       Attractor attractor=attractors.get(j);
+       attractor.duration++;
+       attractor.exploded();
+     }
+     
+     for (int i = 0; i < numParticles; i++) {
+       Particle p = (Particle) particleList[i];
+      p.run();
+    }
+  }
+  
+  void draw() {
+    
+    for (int i = 0; i < numParticles; i++) {
+      Particle p = (Particle) particleList[i];
+      p.draw();
+      //filter(BLUR, 3);
+    }
+  }
+}
+
+class Particle{
+  float x;
+  float y;
+  float vx;
+  float vy;
+  float ax=0;
+  float ay=0;
+  float speed=4;
+  float angle=random(360);
+  float radius = 2;
+  int num = 100;
+  int range = 20;
+  float[] px = new float [num];
+  float[] py = new float [num];
+  
+   Particle(float _x, float _y, float _xspeed, float _yspeed, float _radius){
+      x=_x;
+      y=_y;
+      vx= _xspeed;
+      vy= _yspeed;
+      radius=_radius;
+   }
+  
+  void draw(){
+    ellipse(x, y, radius, radius);
+    fill(255);
+}  
+  
+  void update(){
+  }
+  
+   void run() {
+    vx+=ax;
+    vy+=ay;
+    x = x + vx;
+    y = y + vy;
+    vx*=0.05;
+    vy*=0.05;
+    
+    //restrict particles to the screen / toroidal movement
+    if(x> width) x-=width;
+    if(y> height) y-=height;
+    if(x<0) x=width;
+    if(y<0) y=height;
+  }
+  
+  void brown(){
+    angle+=(random(0.4)-0.2); 
+    
+     vx+=speed*sin(angle);
+     vy+=speed*cos(angle);
+  }
+  
+  void attract(Attractor attractor){
+    //print("\n\nXY:::#"+attractor.x+"    "+attractor.y);
+    float vecx=(attractor.x-x);
+    float vecy=(attractor.y-y);
+    float d=sqrt((vecx*vecx)+(vecy*vecy))*1.0;
+    
+    if(attractor.isToExplode==1){
+      if( d < 200){
+          vx*=5;
+          vy*=5;
+          ax+=10;
+          ay+=10;
+        
+          //print("BANG!");
+        }
+      }
+    
+    if(str(d)=="NaN" || d==0){
+       d=0.00001; 
+    }
+    
+    float k=0.006;
+    //print("so:"+attractor.x+"  "+attractor.y);
+    if( d < attractor.getRadius()){
+      float force=k*((d-attractor.radius)/d);
+       ax-=force*vecx;
+       ay-=force*vecy;
+      
+      //print("\nFORCE:"+force+"      vecx:"+vecx+"   vecy:"+vecy+"    force:"+attractor.force);
+      
+      //print("\nX Y POSITION:"+ax+"   "+ay);
+    }
+  }
+}
+
+class People{
+  Person[] personList=new Person[40];
+  int numPerson=0;
+  int uiMode=1; //1:mouse, 2:camera
+  int radius=40;
+
+  Person selectedPerson;
+  int currMX=-1;
+  int currMY=-1;
+  
+  People(int _uiMode){ 
+    uiMode=_uiMode;
+  } 
+  
+  void update(){
+    if(uiMode==1 && selectedPerson!=null){ //o valor de um objecto é por defeito 'null
+       selectedPerson.x=mouseX;
+       selectedPerson.y=mouseY;
+    }else if(uiMode==2){
+    }
+    
+   //loop
+   for(int i=0; i<numPerson; i++){
+      Person p=personList[i];
+      p.update();
+    }
+  }
+  
+  void setCameraData(int[] data){
+    print("have data!");
+  }
+  
+  void draw(){
+    for(int i=0; i<numPerson; i++){
+      
+      Person p=personList[i];
+      p.draw();
+   }
+  }
+  
+  Person[] getPersonList(){
+    return personList; 
+  }
+  
+  void destroyPerson(Person person){
+      for(int i=0; i<numPerson; i++){
+         if(personList[i]==person){
+           for(int j=i; j<numPerson-1; j++){
+              personList[j]=personList[j+1];
+           }
+           numPerson--;
+           break;
+         } 
+       }
+  }
+  
+  void mousePressed() {
+     if(uiMode==1){
+       //search if a Preson was pressed:
+       Boolean foundPerson=false;
+       selectedPerson=null;
+       currMX=mouseX;
+       currMY=mouseY;
+       for(int i=0; i<numPerson; i++){
+         Person person=personList[i];
+         //print("person xy:"+person.x+" "+person.y);
+         
+         if(abs(mouseX-person.x)<radius && abs(mouseY-person.y)<radius){
+            //print("\n encontrou pessoa!");
+            foundPerson=true;
+            selectedPerson=person;
+            
+            break;
+         } 
+       }
+     }
+    }
+  
+  void mouseReleased() {
+     if(uiMode==1){
+         if(selectedPerson!=null){
+           if(mouseX==currMX && mouseY==currMY){
+              destroyPerson(selectedPerson); //destroys a Person
+              //print("destroied person");
+           }
+       }else{
+           if(mouseX==currMX && mouseY==currMY){
+               personList[numPerson]=new Person(mouseX, mouseY, radius);
+               numPerson++; //creates a Person
+               //print("created person: "+numPerson+" existent");
+           }
+       }
+       
+        selectedPerson=null;
+     }
+  }
+}
+
+class Person{
+  float x=0;
+  float y=0;
+  float vx=0;
+  float vy=0; 
+  float radius=5;
+  
+  Person(int _x, int _y, int _radius){
+    x=_x;
+    y=_y;
+    radius=_radius;
+  } 
+  
+  void draw(){
+    ellipse(x, y, radius, radius);
+     fill(0);
+  }
+  
+  void update(){
+  }
+}
