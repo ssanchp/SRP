@@ -1,0 +1,26 @@
+SRP
+===
+http://simulatereverseplay.wordpress.com/
+
+Simulate-Reverse Play considers a type of play that emerges from the simulation and reversal of a specific set of procedures. These procedures define the system’s behavior considering both computer and human, while implying an openness of the work to chance, that is, its performance is complemented by the audience’s active participation. 
+
+Proposes an adaptation of the Game of Life’s algorithm through the construction of two co-dependent layers — a virtual computational layer and a real non-computational layer — that communicate with each other on the basis of this algorithm.The algorithm was initially implemented on a mouse mode (computational version) and subsequently adapted to a camera mode (installation version).
+
+camera_mode
+===
+The implementation of the camera mode entails the human mediation of the adapted algorithm. On this mode the entities of the system are represented by human participants whose image is captured by a video camera.
+
+- Software: 
+Processing 2.0.
+
+- Materials: 
+Camera/ Webcam;
+Projector + Projector screen.
+
+- Instructions:
+The camera must be placed perpendicular to the ground;
+The area captured by the camera must be demarcated so that participants can identify its limits;
+The matrix of the board must be adjusted to the area occupied by each participant in order to be possible to map one person per cell. 
+
+
+
